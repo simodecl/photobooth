@@ -1,6 +1,7 @@
 # Face filters (Snapchat like) using OpenCV
 # @author:- Kunal Gupta (cite as kg777)
-
+from picamera.array import PiRGBArray
+from picamera import PiCamera
 import cv2
 import sys
 import logging as log
@@ -73,7 +74,7 @@ def put_dog_filter(dog,fc,x,y,w,h):
     
 ch = 0
 print("Select Filter:1. Hat 2. Moustache 3. Hat and Moustache 4. Dog Filter")
-ch = int(raw_input())
+ch = 2
     
     
 while True:
