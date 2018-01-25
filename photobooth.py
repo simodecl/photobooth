@@ -1,6 +1,6 @@
 # USAGE
 # python photobooth.py
-# python photobooth.py --picamera 1
+# python photobooth.py --picamera 0
 
 # import the necessary packages
 from imutils.video import VideoStream
@@ -12,7 +12,7 @@ import cv2
 import numpy as np
 from PIL import Image
 import firebase_admin
-from firebase import firebase
+import firebase
 from firebase_admin import credentials
 from firebase_admin import db
 from google.cloud import storage
@@ -23,11 +23,11 @@ faceCascade = cv2.CascadeClassifier(cascPath)
 
 # construct the argument parse and parse the arguments
 ap = argparse.ArgumentParser()
-ap.add_argument("-p", "--picamera", type=int, default=-1,
+ap.add_argument("-p", "--picamera", type=int, default=1,
 	help="whether or not the Raspberry Pi camera should be used")
 args = vars(ap.parse_args())
 
-#enable google cloud Storage & ref to an existing bucket
+# enable google cloud Storage & ref to an existing bucket
 bucket = storage.Client().get_bucket('photoboothgdm.appspot.com')
 
 cred = credentials.Certificate('photoboothgdm-firebase-adminsdk-swg32-46b010c16b.json')
@@ -42,6 +42,7 @@ ImageMeta = db.reference().child('ImageMeta')
 vs = VideoStream(usePiCamera=args["picamera"] > 0).start()
 time.sleep(2.0)
 
+# read filter images and define their function
 mst = cv2.imread('moustache.png')
 hat = cv2.imread('cowboy_hat.png')
 dog = cv2.imread('dog_filter.png')
@@ -52,8 +53,8 @@ def put_moustache(mst,fc,x,y,w,h):
     face_width = w
     face_height = h
 
-    mst_width = face_width+1
-    mst_height = int(0.35*face_height)+1
+    mst_width = int(face_width*0.4166666)+1
+    mst_height = int(face_height*0.142857)+1
 
 
     mst = cv2.resize(mst,(mst_width,mst_height))
@@ -103,13 +104,14 @@ button_yellow=16
 GPIO.setup(button_white,GPIO.IN,pull_up_down=GPIO.PUD_UP)
 GPIO.setup(button_yellow,GPIO.IN,pull_up_down=GPIO.PUD_UP)
 
+ch = 0
 
 # loop over the frames from the video stream
 while True:
 	# grab the frame from the threaded video stream and resize it
 	# to have a maximum width of 400 pixels
 	frame = vs.read()
-	frame = imutils.resize(frame, width=400)
+	frame = imutils.resize(frame, width= 400)
 
 	gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -122,17 +124,30 @@ while True:
                 
         # Draw a rectangle around the faces
         for (x, y, w, h) in faces:
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
             
-            filters = [put_moustache, put_hat, put_dog]
-            frame = filters[0](mst,frame,x,y,w,h)
-                
+            if ch==2:
+                frame = put_moustache(mst,frame,x,y,w,h)
+            elif ch==1:
+                frame = put_hat(hat,frame,x,y,w,h)
+            elif ch==3:
+                frame = put_moustache(mst,frame,x,y,w,h)
+                frame = put_hat(hat,frame,x,y,w,h)
+            else:
+                frame = put_dog_filter(dog,frame,x,y,w,h)
+                            
 
 	# show the frame
 	cv2.imshow("Frame", frame)
 	key = cv2.waitKey(1) & 0xFF
 	
-	#Take picture after pressing white button
+	# go to next filter after pressing yellow button
+	if GPIO.input(button_yellow)==0:
+            print("yellow btn")
+            ch += 1
+            if ch==4:
+                ch = 0
+	
+	# Take picture after pressing white button
         if GPIO.input(button_white)==0:
             print('white button pressed')
             Time_String = dt.datetime.now().strftime('_%Y_%m_%d_%H_%M_%S_%f')[:-3]
@@ -142,11 +157,13 @@ while True:
             #upload local file to online bucket
             blob = bucket.blob("Snaps/"+ImageName)
             blob.upload_from_filename(filename=ImageName)
-            ImageMeta.push().set(ImageName)
+            ImageMeta.push().set(ImageName)           
 
 	# if the `q` key was pressed, break from the loop
 	if key == ord("q"):
 		break
+	    
+	time.sleep(.5)
 
 # do a bit of cleanup
 cv2.destroyAllWindows()
